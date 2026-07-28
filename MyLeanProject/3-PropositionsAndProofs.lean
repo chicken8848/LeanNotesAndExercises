@@ -190,3 +190,356 @@ example (h: p ∧ q) : q ∧ p ∧ q :=
         ⟨h.right, h.left, h.right⟩
 
 /- 3.3.2 Disjunction -/
+example (hp : p) : p ∨ q := Or.intro_left q hp
+example (hq : q) : p ∨ q := Or.intro_right p hq
+example (h : p ∨ q) : q ∨ p := Or.elim h
+        (fun hp : p =>
+             show q ∨ p from Or.intro_right q hp)
+        (fun hq : q =>
+             show q ∨ p from Or.intro_left p hq)
+/- It can also be written more precisely -/
+example (h: p ∨ q) : q ∨ p :=
+        Or.elim h (λ hp => Or.inr hp) (fun hq => Or.inl hq)
+
+/- 3.3.3 Negation and Falsity -/
+example (hpq : p -> q) (hnq : ¬q) : ¬p :=
+        fun hp : p =>
+        show False from hnq (hpq hp)
+
+/-
+The connetive False has a single elimination rule, False.elim
+which expresses the fact that anything follows from a contradiction.
+This rule is something called ex falso
+-/
+example (hp : p) (hnp : ¬p) : q := False.elim (hnp hp)
+
+/- Deriving a fact from contradictory hypotheses is represented by absurd -/
+example (hp : p) (hnp : ¬p) : q := absurd hp hnp
+example (hnp : ¬p) (hq : q) (hqp: q -> p) : r := absurd (hqp hq) hnp
+
+/- 3.3.4 Logical Equivalence -/
+theorem and_swap : p ∧ q <-> q ∧ p :=
+        Iff.intro
+            (fun h : p ∧ q =>
+                 show q ∧ p from And.intro (And.right h) (And.left h))
+            (fun h : q ∧ p =>
+                 show p ∧ q from And.intro (And.right h) (And.left h))
+
+#check and_swap p q
+
+variable (h₁ : p ∧ q)
+example : q ∧ p := Iff.mp (and_swap p q) h₁ 
+
+/-
+We can use the anonymous constructor notation to construct a proof of
+p <-> q from proofs of the forward and backwards directions, and use the
+. notation with mp and mpr.
+-/
+
+theorem and_swap2 : p ∧ q <-> q ∧ p :=
+        ⟨ λ h => ⟨h.right, h.left⟩, λ h => ⟨h.right, h.left⟩ ⟩
+example (h: p ∧ q) : q ∧ p := (and_swap p q).mp h
+
+/- 3.4 Introducing Auxiliary Subgoals -/
+/-
+the have construct introduces an auxiliary subgoal in a proof, this
+helps to structure long proofs
+-/
+example (h : p ∧ q) : q ∧ p :=
+        have hp : p := h.left
+        have hq : q := h.right
+        show q ∧ p from ⟨hq, hp⟩
+/-
+internally, "have h : p := s; t" produces the term "(λ (h : p) => t) s"
+In order words, s is a proof of p, t is a proof of the desired conclusion
+assuming h : p
+
+We can also use "suffices to show" construction, to reason backwards
+-/
+example (h: p ∧ q) : q ∧ p :=
+        have hp : p := h.left
+        suffices hq : q from And.intro hq hp
+        show q from And.right h
+
+/- 3.5 Classical Logic -/
+/-
+The introduction and elimination rules we have seen so far are all
+constructive. Ordinary classical logic adds to this the law of the
+excluded middle, p ∨ ¬p. To use this, you have to open the classical
+namespace
+-/
+section
+open Classical
+
+#check em p
+/-
+One consequence of the law of excluded middle is the principle of
+double-negation elimination
+
+This allows you to prove any prop p, by assuming not p and deriving False,
+because this amounts to proving not not p.
+So you can do a proof by contradiction
+-/
+theorem dne {p : Prop} (h : ¬¬p) : p :=
+        Or.elim (em p)
+                (λ hp : p => hp)
+                (λ hnp : ¬p => absurd hnp h)
+
+theorem _em {p : Prop} (h : p) : p ∨ ¬p :=
+        dne (λ h1 : ¬(p ∨ ¬p) =>
+             have hnp : ¬p := (λ (hp : p) => h1 (Or.inl hp))
+             h1 (Or.inr hnp))
+
+/- One could carry out a proof by cases -/
+example (h: ¬¬p) : p :=
+        byCases
+            (fun h1 : p => h1)
+            (fun h1 : ¬p => absurd h1 h)
+
+/- Or by contradiction -/
+example (h: ¬¬p) : p :=
+        byContradiction
+            (λ h1 : ¬p =>
+               show False from h h1)
+
+/-
+If you are not used to thinking constructively, it may take some time
+to get a sense of where classical reasoning is used. From a constructive
+standpoint, knowing that p and q are not both true does not necessarily
+tell you which one is false
+-/
+example (h: ¬(p ∧ q)) : ¬p ∨ ¬q :=
+        Or.elim (em p)
+                (λ hp : p =>
+                   Or.inr
+                    (show ¬q from
+                          fun hq : q => h ⟨hp, hq⟩))
+                (λ hp : ¬p => Or.inl hp)
+
+end
+
+/-
+The sorry identifier produces a proof of anything, which is useful for
+building long proofs incrementally. Start writing from top down, using sorry
+to fill in the subproofs. Make sure Lean accepts the term with all the sorry's
+Then go back to replace each sorry with an actual proof
+
+Instead of using sorry, you can use _ as a placeholder. This tells Lean
+that the argument is implicit, and should be filled in automatically.
+If Lean does so and fails with "don't know how to synthesize placeholder,"
+Lean reports the subgoal that needs to be filled at that point.
+You can then construct a proof by incrementally filling in these
+placeholders
+-/
+
+
+/- 3.7 Exercises -/
+variable (p q r : Prop)
+
+-- commutativity of ∧ and ∨
+example : p ∧ q ↔ q ∧ p := ⟨λ h => ⟨h.right, h.left⟩, λ h => ⟨h.right, h.left⟩⟩
+example : p ∨ q ↔ q ∨ p := 
+        Iff.intro
+            (λ h : p ∨ q =>
+               Or.elim h
+                       (λ hp : p => Or.inr hp)
+                       (λ hq : q => Or.inl hq))
+            (λ h : q ∨ p =>
+               Or.elim h
+                       (λ hq : q => Or.inr hq)
+                       (λ hp : p => Or.inl hp))
+
+-- associativity of ∧ and ∨
+example : (p ∧ q) ∧ r ↔ p ∧ (q ∧ r) :=
+        Iff.intro
+            (λ (h : (p ∧ q) ∧ r) =>
+               have hqr : q ∧ r := ⟨h.left.right, h.right⟩
+               have hp : p := h.left.left
+               show p ∧ (q ∧ r) from ⟨hp, hqr⟩)
+            (λ h : p ∧ (q ∧ r) =>
+               have hpq : p ∧ q := ⟨h.left, h.right.left⟩
+               have hr : r := h.right.right
+               show (p ∧ q) ∧ r from ⟨hpq, hr⟩)
+            
+example : (p ∨ q) ∨ r ↔ p ∨ (q ∨ r) :=
+        Iff.intro
+            (λ (h : (p ∨ q) ∨ r) =>
+               Or.elim h
+                       (λ hpq : p ∨ q => Or.elim hpq
+                                                 (λ hp : p => Or.inl hp)
+                                                 (λ hq : q => Or.inr (Or.inl hq)))
+                       (λ hr : r => Or.inr (Or.inr hr)))
+            (λ (h : p ∨ (q ∨ r)) =>
+               Or.elim h
+                       (λ hp : p => Or.inl (Or.inl hp))
+                       (λ hqr : q ∨ r => Or.elim hqr
+                                                 (λ hq : q => Or.inl (Or.inr hq))
+                                                 (λ hr : r => Or.inr hr)))
+
+-- distributivity
+example : p ∧ (q ∨ r) ↔ (p ∧ q) ∨ (p ∧ r) :=
+        Iff.intro
+            (λ h: p ∧ (q ∨ r) =>
+               have hp : p := h.left
+               have hqr : q ∨ r := h.right
+               Or.elim hqr
+                       (λ hq : q => Or.inl ⟨hp, hq⟩)
+                       (λ hr : r => Or.inr ⟨hp, hr⟩))
+            (λ h: (p ∧ q) ∨ (p ∧ r) =>
+               Or.elim h
+                       (λ hpq : p ∧ q => ⟨hpq.left, Or.inl hpq.right⟩)
+                       (λ hpr : p ∧ r => ⟨hpr.left, Or.inr hpr.right⟩))
+
+example : p ∨ (q ∧ r) ↔ (p ∨ q) ∧ (p ∨ r) := ⟨
+        (λ h: p ∨ (q ∧ r) =>
+           have hpq : p ∨ q := Or.elim h
+                                       (λ hp: p => Or.inl hp)
+                                       (λ hqr: q ∧ r => Or.inr hqr.left)
+           have hpr : p ∨ r := Or.elim h
+                                       (λ hp: p => Or.inl hp)
+                                       (λ hqr: q ∧ r => Or.inr hqr.right)
+           ⟨hpq, hpr⟩),
+        (λ h: (p ∨ q) ∧ (p ∨ r) =>
+           have hpq : p ∨ q := h.left
+           have hpr : p ∨ r := h.right
+           Or.elim hpq
+                   (λ hp : p => Or.inl hp)
+                   (λ hq : q =>
+                      Or.elim hpr
+                              (λ hp : p => Or.inl hp)
+                              (λ hr : r => Or.inr ⟨hq, hr⟩)))
+        ⟩
+
+-- other properties
+example : (p → (q → r)) ↔ (p ∧ q → r) := ⟨
+        (λ h: p -> (q -> r) => (λ hpq: p ∧ q => h hpq.left hpq.right)),
+        (λ h: p ∧ q -> r => λ hp: p => λ hq: q => h ⟨hp, hq⟩)
+        ⟩
+
+example : ((p ∨ q) → r) ↔ (p → r) ∧ (q → r) := ⟨
+        (λ h: ((p ∨ q) -> r) => ⟨
+           (λ hp: p => h (Or.intro_left q hp)),
+           (λ hq: q => h (Or.intro_right p hq))
+        ⟩),
+        (λ h: (p -> r) ∧ (q -> r) =>
+           (λ hpq: p ∨ q =>
+              Or.elim hpq
+                      (λ hp : p => (And.left h) hp)
+                      (λ hq : q => (And.right h) hq)))
+⟩
+
+example : ¬(p ∨ q) ↔ ¬p ∧ ¬q := ⟨
+        (λ h: ¬(p ∨ q) => ⟨
+           (λ hp: p => h (Or.intro_left q hp)),
+           (λ hq: q => h (Or.intro_right p hq))
+        ⟩),
+        (λ h: (¬p ∧ ¬q) =>
+           λ hpq: (p ∨ q) =>
+             Or.elim hpq
+                     (λ hp: p => h.left hp)
+                     (λ hq: q => h.right hq))
+⟩
+
+example : ¬p ∨ ¬q → ¬(p ∧ q) :=
+        (λ h: ¬p ∨ ¬q =>
+           λ hpq: (p ∧ q) =>
+             Or.elim h
+                     (λ hp: ¬p => hp hpq.left)
+                     (λ hq: ¬q => hq hpq.right))
+
+example : ¬(p ∧ ¬p) :=
+        (λ h: (p ∧ ¬p) => h.right h.left)
+
+example : p ∧ ¬q → ¬(p → q) :=
+        (λ h: (p ∧ ¬q) =>
+           λ hpq: (p -> q) =>
+             h.right (hpq h.left))
+
+example : ¬p → (p → q) :=
+        (λ h: ¬p => λ hp: p => False.elim (h hp))
+
+example : (¬p ∨ q) → (p → q) :=
+        (λ h: (¬p ∨ q) =>
+           λ hp: p => Or.elim h
+                              (λ hnp: ¬p => False.elim (hnp hp))
+                              (λ hq: q => hq))
+
+example : p ∨ False ↔ p := ⟨
+        (λ h: p ∨ False =>
+           Or.elim h
+                   (λ hp: p => hp)
+                   (λ f: False => False.elim f)),
+        (λ h: p => Or.inl h)
+⟩
+
+example : p ∧ False ↔ False := ⟨
+        (λ h: p ∧ False => h.right),
+        (λ h: False => False.elim h)
+⟩
+
+example : (p → q) → (¬q → ¬p) :=
+        (λ h: (p -> q) =>
+           λ hnq: ¬q =>
+             λ hp: p => hnq (h hp))
+
+open Classical
+
+variable (p q r : Prop)
+
+example : (p → q ∨ r) → ((p → q) ∨ (p → r)) :=
+        (λ h: p -> q ∨ r =>
+           Or.elim (em p)
+                   (λ hp: p =>
+                      Or.elim (h hp)
+                              (λ hq: q => Or.inl (λ _ : p => hq))
+                              (λ hr: r => Or.inr (λ _ : p => hr)))
+                   (λ hnp: ¬p => False.elim (hnp hp)))
+
+example : ¬(p ∧ q) → ¬p ∨ ¬q :=
+        (λ h: ¬(p ∧ q) =>
+           Or.elim (em p)
+                   (λ hp: p =>
+                      Or.elim (em q)
+                              (λ hq: q => False.elim (h ⟨hp, hq⟩))
+                              (λ hnq: ¬q => Or.inr hnq))
+                   (λ hnp: ¬p => Or.inl hnp))
+
+example : ¬(p → q) → p ∧ ¬q :=
+        (λ h: ¬(p -> q) => ⟨
+           (Or.elim (em p)
+                    (λ hp: p => hp)
+                    (λ hnp: ¬p =>
+                       have hpq: p -> q := λ hp: p => False.elim (hnp hp)
+                       False.elim (h hpq)
+                       )),
+           (λ hq: q =>
+              have hpq: p -> q := λ hp: p => hq
+              h hpq)
+        ⟩)
+
+example : (p → q) → (¬p ∨ q) :=
+        (λ h: p -> q =>
+           Or.elim (em p)
+                   (λ hp: p => Or.inr (h hp))
+                   (λ hnp: ¬p => Or.inl hnp))
+
+example : (¬q → ¬p) → (p → q) :=
+        (λ h: (¬q -> ¬p) =>
+           Or.elim (em q)
+                   (λ hq: q => λ _: p => hq)
+                   (λ hnq: ¬q =>
+                      (λ hp: p =>
+                        False.elim ((h hnq) hp))))
+
+example : p ∨ ¬p :=
+        Or.elim (em p)
+                (λ hp: p => Or.inl hp)
+                (λ hnp: ¬p => Or.inr hnp)
+
+example : (((p → q) → p) → p) :=
+        (λ h: ((p -> q) -> p) =>
+           Or.elim (em p)
+                   (λ hp: p => hp)
+                   (λ hnp: ¬p =>
+                      have hpq: p -> q := (λ hp: p => False.elim (hnp hp))
+                      h hpq))
