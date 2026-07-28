@@ -304,3 +304,217 @@ example: (x + y) * (x + y) = x * x + y * x + x * y + y * y :=
          by simp [Nat.mul_add, Nat.add_mul, Nat.add_assoc]
 
 /- 4.4 The Existential Quantifier -/
+/-
+Now we get to the existential quantifier, which can be written either
+exists x : α, p x or ∃ x: α, p x. Which are both convenient when compared to
+Exists (fun x : α => p x)
+
+As expected, the library includes both an introduction rule and an elimination rule
+
+The intro rule is straightforward, to prove ∃ x: α, p x, it suffices to provide a suitable
+term t and a proof of p t
+-/
+example : ∃ x: Nat, x > 0 :=
+        have h : 1 > 0 := Nat.zero_lt_succ 0
+        Exists.intro 1 h
+
+example (x: Nat) (h: x > 0) : ∃ y, y < x :=
+        Exists.intro 0 h
+
+example (x y z: Nat) (hxy: x < y) (hyz: y < z) : ∃w, x < w ∧ w < z :=
+        Exists.intro y (And.intro hxy hyz)
+
+#check @Exists.intro
+
+/- We can use the anonymous constructor notation ⟨t, h⟩ for Exists.intro t h -/
+example : ∃ x : Nat, x > 0 :=
+    have h : 1 > 0 := Nat.zero_lt_succ 0
+    ⟨1, h⟩
+
+example (x : Nat) (h : x > 0) : ∃ y, y < x :=
+    ⟨0, h⟩
+
+example (x y z : Nat) (hxy : x < y) (hyz : y < z) : ∃ w, x < w ∧ w < z :=
+    ⟨y, hxy, hyz⟩
+
+/-
+We can view Exists.intro as an information hiding operation, since it hides
+the witness to the body of the assertion.
+Exists.elim, performs the opposite operation. It allows us to prove a prop
+q from ∃ x : α, p x, by showing that q follows from p w for an arbitrary value w.
+
+If q does not mention w, then showing that q follows from p w is tantamount to
+showing that q follows from the existence of any such x
+-/
+variable (α : Type) (p q : α → Prop)
+
+example (h: ∃ x, p x ∧ q x) : ∃ x, q x ∧ p x :=
+        Exists.elim h
+                    (λ w => 
+                    λ hw: p w ∧ q w =>
+                    show ∃ x, q x ∧ p x from ⟨w, ⟨hw.right, hw.left⟩⟩)
+
+/-
+Notice that an existential propostition is very similar to a sigma type,
+as described in the dependent type section.
+The difference is that existential propositions are propositions, why sigma
+type are types.
+
+Given a predicate p : α -> Prop and a family of types β : α -> Type, for a term
+a : α with h: p a and h' : β a, the term Exists.intro a h has the type
+(∃ x: α, p x) : Prop, while Sigma.mk a h' has type (Σ x: α, β x). This is another instance
+of the Curry-Howard isomorphism
+
+Lean provides a more convenient way to eliminate from an existential quantifier with the
+match expression
+-/
+variable (α : Type) (p q : α → Prop)
+
+example (h : ∃ x, p x ∧ q x) : ∃ x, q x ∧ p x :=
+        match h with
+        | ⟨w, hw⟩ => ⟨w, hw.right, hw.left⟩
+/-
+The match statement "destructs" the existential assertion into the components
+w and hw, which can then be used in the body of the statement to prove the proposition.
+-/
+
+example (h : ∃ x, p x ∧ q x) : ∃ x, q x ∧ p x :=
+        match h with
+        | ⟨(w: α), (hw: p w ∧ q w)⟩ => ⟨w, hw.right, hw.left⟩
+
+/- You can even use the match statement to decompose the conjunction at the same time -/
+example (h: ∃ x, p x ∧ q x) : ∃ x, q x ∧ p x :=
+        match h with
+        | ⟨w, hpw, hqw⟩ => ⟨w, hqw, hpw⟩
+
+/- You can also use pattern matching -/
+example (h: ∃ x, p x ∧ q x) : ∃ x, q x ∧ p x :=
+        let ⟨w, hpw, hqw⟩ := h
+        ⟨w, hqw, hpw⟩
+
+/- We can also have an implicit match in the λ expr -/
+example : (∃ x, p x ∧ q x) → ∃ x, q x ∧ p x :=
+        λ ⟨w, hpw, hqw⟩ => ⟨w, hqw, hpw⟩
+
+/-
+These variations are instances of a more general pattern-matching
+construct
+-/
+def IsEven (a : Nat) := ∃ b, a = 2*b
+
+theorem even_plus_even (h1: IsEven a) (h2: IsEven b) : IsEven (a + b) :=
+        Exists.elim h1 (λ w1 (hw1 : a = 2 * w1) =>
+        Exists.elim h2 (λ w2 (hw2 : b = 2 * w2) =>
+                    Exists.intro (w1+w2)
+                                 (calc a + b
+                                       _ = 2 * w1 + 2 * w2 := by rw [hw1, hw2]
+                                       _ = 2 * (w1 + w2) := by rw [Nat.mul_add])))
+
+theorem even_plus_even2 (h1: IsEven a) (h2: IsEven b) : IsEven (a + b) :=
+        match h1, h2 with
+        | ⟨w1, hw1⟩, ⟨w2, hw2⟩ =>
+          ⟨w1 + w2, by rw [hw1, hw2, Nat.mul_add]⟩
+
+
+section
+open Classical
+variable (p: α → Prop)
+
+example (h: ¬ ∀ x, ¬ p x) : ∃ x, p x :=
+        byContradiction
+            (λ h1: ¬ ∃x, p x =>
+               have h2: ∀x, ¬ p x :=
+                    λ x =>
+                    λ h3 : p x =>
+                    have h4 : ∃ x, p x := ⟨x, h3⟩
+                    show False from h1 h4
+                  show False from h h2)
+
+variable (α : Type) (p q : α → Prop)
+variable (r : Prop)
+
+example : (∃ x : α, r) → r :=
+        (λ h: ∃x : α, r =>
+           match h with
+           | ⟨x, r⟩ => r)
+
+example (a : α) : r → (∃ x : α, r) :=
+        λ hr => ⟨a, hr⟩
+
+example : (∃ x, p x ∧ r) ↔ (∃ x, p x) ∧ r :=
+        Iff.intro
+            (λ ⟨a, ⟨hpa, hr⟩⟩ => ⟨⟨a, hpa⟩, hr⟩)
+            (λ ⟨⟨a, hpa⟩, hr⟩ => ⟨a, ⟨hpa, hr⟩⟩)
+
+example : (∃ x, p x ∨ q x) ↔ (∃ x, p x) ∨ (∃ x, q x) := 
+        Iff.intro
+            (λ ⟨a, (h1: p a ∨ q a)⟩ =>
+               Or.elim h1
+                       (λ hpa: p a => Or.inl ⟨a, hpa⟩)
+                       (λ hqa: q a => Or.inr ⟨a, hqa⟩))
+            (λ h: (∃ x, p x) ∨ (∃ x, q x) =>
+               Or.elim h
+                       (λ ⟨a, hpa⟩ => ⟨a, (Or.inl hpa)⟩)
+                       (λ ⟨a, hqa⟩ => ⟨a, (Or.inr hqa)⟩))
+
+example : (∀ x, p x) ↔ ¬ (∃ x, ¬ p x) :=
+        Iff.intro
+            (λ h1 => λ ⟨x, h2⟩ => h2 (h1 x))
+            (λ h1 => λ x =>
+               byContradiction
+                (λ h2 : ¬ p x => h1 ⟨x, h2⟩))
+
+example : (∃ x, p x) ↔ ¬ (∀ x, ¬ p x) :=
+        Iff.intro
+            (λ ⟨a, h1⟩ => λ h2 => (h2 a) h1)
+            (λ h1 => byContradiction
+               (λ h2 : ¬(∃ x, p x) =>
+                  h1 (λ a => (λ h3 => h2 ⟨a, h3⟩))))
+
+example : (¬ ∃ x, p x) ↔ (∀ x, ¬ p x) :=
+        Iff.intro
+            (λ h1 => λ a => λ h2 => h1 ⟨a, h2⟩)
+            (λ h1 => λ ⟨a, h2⟩ => (h1 a) h2)
+
+example : (¬ ∀ x, p x) ↔ (∃ x, ¬ p x) :=
+        Iff.intro
+            (λ h1 => byContradiction
+               (λ h2 =>
+                  h1 (λ x =>
+                     byContradiction
+                        (λ h3: ¬ p x =>
+                           h2 ⟨x, h3⟩))))
+            (λ ⟨a, h1⟩ => λ h2 => h1 (h2 a))
+
+example : (∀ x, p x → r) ↔ (∃ x, p x) → r :=
+        Iff.intro
+            (λ h1 => λ ⟨a, h2⟩ => (h1 a) h2)
+            (λ h1 => λ a => λ h2 => h1 ⟨a, h2⟩)
+
+example (a : α) : (∃ x, p x → r) ↔ (∀ x, p x) → r :=
+        Iff.intro
+            (λ ⟨x, pxr⟩ => λ h1 => (pxr (h1 x)))
+            (λ h1 => byContradiction
+               (λ h2 =>
+                  have h_forall : ∀ x, p x := λ x =>
+                       byContradiction
+                        (λ hpx : ¬ p x =>
+                           h2 ⟨x, λ hp => False.elim (hpx hp)⟩)
+                  have hr : r := h1 h_forall
+                  h2 ⟨a, λ _ => hr⟩))
+
+example (a : α) : (∃ x, r → p x) ↔ (r → ∃ x, p x) :=
+        Iff.intro
+            (λ h1: ∃ x, r -> p x => λ r =>
+               match h1 with
+               | ⟨x, rpx⟩ => ⟨x, (rpx r)⟩)
+            (λ h1: r → ∃ x, p x => byContradiction
+               (λ h2: ¬∃ x, r → p x =>
+                  have hr: r := byContradiction
+                       (λ hnr: ¬r => h2 ⟨a, λ hr': r => False.elim (hnr hr')⟩)
+                  match h1 hr with
+                  | ⟨x, hpx⟩ => h2 ⟨x, λ _ => hpx⟩))
+end 
+
+/- 4.5 More on the Proof Language -/
+
