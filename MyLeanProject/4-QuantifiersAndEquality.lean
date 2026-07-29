@@ -517,4 +517,163 @@ example (a : α) : (∃ x, r → p x) ↔ (r → ∃ x, p x) :=
 end 
 
 /- 4.5 More on the Proof Language -/
+/-
+We can use anonymous have expressions to intro an aux goal without having to label it.
+We can refer to the last expression introduced in this way using the keyword this
+-/
+variable (f: Nat → Nat)
+variable (h: ∀ x: Nat, f x ≤ f (x + 1))
 
+example : f 0 ≤ f 3 :=
+        have : f 0 ≤ f 1 := h 0
+        have : f 0 ≤ f 2 := Nat.le_trans this (h 1)
+        show f 0 ≤ f 3 from Nat.le_trans this (h 2)
+
+/-
+this can be effective in eliminating the clutter of lots of labels
+
+When the goal can be inferred, we can also ask Lean instead to fill in the proof
+by writing by assumption
+-/
+example : f 0 ≤ f 3 :=
+        have : f 0 ≤ f 1 := h 0
+        have : f 0 ≤ f 2 := Nat.le_trans (by assumption) (h 1)
+        show f 0 ≤ f 3 from Nat.le_trans (by assumption) (h 2)
+/-
+The by assumption tactic asks lean to prove the goal by finding a suitable hypothesis
+in the local context
+
+We can also ask Lean to fill in the proof by writing ‹p› (flq/frq) "french left quote"/"french right quote"
+
+This approach is more robust than using by assumption, because the type of the assumption
+that needs to be inferred is given explicitly. It also makes proofs more readable
+-/
+example : f 0 ≥ f 1 → f 1 ≥ f 2 → f 0 = f 2 :=
+        λ _ : f 0 ≥ f 1 =>
+        λ _ : f 1 ≥ f 2 =>
+        have : f 0 ≥ f 2 := Nat.le_trans ‹f 1 ≥ f 2› ‹f 0 ≥ f 1›
+        have : f 0 ≤ f 2 := Nat.le_trans (h 0) (h 1)
+        show f 0 = f 2 from Nat.le_antisymm this ‹f 0 ≥ f 2›
+
+/-
+We can use French quaotation marks to refer to anything in the context
+-/
+
+/- 4.6 Exercises -/
+/- 4.6.1 : Prove these equivalences -/
+section
+variable (α : Type) (p q : α → Prop)
+
+example : (∀ x, p x ∧ q x) ↔ (∀ x, p x) ∧ (∀ x, q x) :=
+        Iff.intro
+            (λ h : ∀ (x : α), p x ∧ q x =>
+               ⟨λ x => (h x).left, λ x => (h x).right⟩)
+            (λ ⟨h1, h2⟩ => λ x =>
+               ⟨h1 x, h2 x⟩)
+
+example : (∀ x, p x → q x) → (∀ x, p x) → (∀ x, q x) :=
+        (λ h1 : ∀ (x : α), p x → q x =>
+           λ h2 : ∀ (x : α), p x => λ x => (h1 x) (h2 x))
+
+example : (∀ x, p x) ∨ (∀ x, q x) → ∀ x, p x ∨ q x :=
+        λ h =>
+          Or.elim h
+                  (λ h1 : ∀ (x : α), p x => λ x => Or.inl (h1 x))
+                  (λ h2 : ∀ (x : α), q x => λ x => Or.inr (h2 x))
+end
+
+/-
+4.6.2:
+It is often possible to bring a component of a formula outside a universal quantifier,
+when it does not depend on the quantified variable. Try proving these
+(one direction of the second of these requires classical logic):
+-/
+section
+variable (α : Type) (p q : α → Prop)
+variable (r : Prop)
+
+example : α → ((∀ x : α, r) ↔ r) := (λ x =>
+        Iff.intro
+            (λ h1 : ∀ (x : α), r => (h1 x))
+            (λ hr : r => λ x => hr))
+
+/- Requires classical -/
+open Classical
+example : (∀ x, p x ∨ r) ↔ (∀ x, p x) ∨ r :=
+        Iff.intro
+            (λ h1 : ∀ (x : α), p x ∨ r =>
+               match em r with
+               | Or.inr hnr =>
+                 Or.inl (λ x =>
+                        match h1 x with
+                        | Or.inl hpx => hpx 
+                        | Or.inr hr => False.elim (hnr hr))
+               | Or.inl hr => Or.inr hr)
+            (λ h2 : (∀ (x : α), p x) ∨ r => λ x =>
+               match h2 with
+               | Or.inl hall => Or.inl (hall x)
+               | Or.inr hr => Or.inr hr)
+
+example : (∀ x, r → p x) ↔ (r → ∀ x, p x) :=
+        Iff.intro
+            (λ h : ∀ (x : α), r → p x =>
+               λ r => λ x => (h x) r)
+            (λ h : r → ∀ (x : α), p x =>
+               λ x => λ r => (h r) x)
+end
+
+/-
+4.6.3:
+Consider the “barber paradox,” that is, the claim that in a certain town there is a (male) barber
+that shaves all and only the men who do not shave themselves. Prove that this is a contradiction:
+-/
+section
+variable (men : Type) (barber : men)
+variable (shaves : men → men → Prop)
+
+example (h : ∀ x : men, shaves barber x ↔ ¬ shaves x x) : False :=
+        let hbarber : shaves barber barber ↔ ¬ shaves barber barber := h barber
+        have h_not : ¬ shaves barber barber :=
+             λ h_shaves => (hbarber.mp h_shaves) h_shaves
+        have hshaves : shaves barber barber :=
+             hbarber.mpr h_not
+        h_not hshaves
+end
+
+/-
+4.6.4:
+Remember that, without any parameters, an expression of type Prop is just an assertion.
+Fill in the definitions of prime and Fermat_prime below, and construct each of the given assertions.
+For example, you can say that there are infinitely many primes by asserting that for every
+natural number n, there is a prime number greater than n. Goldbach's weak conjecture states
+that every odd number greater than 5 is the sum of three primes. Look up the definition of a
+Fermat prime or any of the other statements, if necessary.
+-/
+section
+def even (n : Nat) : Prop := ∃ k, n = 2*k 
+
+def prime (n : Nat) : Prop := n > 1 ∧ ∀ k: Nat, k ∣ n → k = 1 ∨ k = n
+
+def infinitely_many_primes : Prop :=
+    ∀ n : Nat, ∃ p : Nat, prime p ∧ p > n
+
+def Fermat_prime (n : Nat) : Prop :=
+    prime n ∧ ∃ k, n = 2 ^ (2 ^ k) + 1
+
+def infinitely_many_Fermat_primes : Prop :=
+    ∀ n: Nat, ∃ p: Nat, prime p ∧ Fermat_prime p
+
+def goldbach_conjecture : Prop :=
+    ∀ n: Nat, n > 2 → even n →
+      ∃ a b : Nat, prime a ∧ prime b ∧ a + b = n
+
+def Goldbach's_weak_conjecture : Prop :=
+    ∀ n: Nat, n > 7 → ¬(even n) → ∃ a b c : Nat,
+      prime a ∧ prime b ∧ prime c ∧ a + b + c = n
+
+def Fermat's_last_theorem : Prop :=
+    ∀ n: Nat, n > 2 → ¬(∃ a b c: Nat,
+      a > 0 ∧ b > 0 ∧ c > 0 ∧
+      a ^ n + b ^ n = c ^ n)
+
+end
