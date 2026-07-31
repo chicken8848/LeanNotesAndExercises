@@ -866,3 +866,296 @@ def Tuple (α : Type) (n : Nat) :=
 example (n : Nat) (h : n = 0) (t : Tuple α n) : Tuple α 0 := by
         rw [h] at t
         exact t
+
+/- 5.7 Using the Simplifier -/
+/-
+Whereas rw is designed as a surgical tool for manipulating a goal, the simplifier
+offers a more powerful form of automation. A number of identities in Lean's libarry
+have been tagged with the [simp] attribute, and the simp tactic uses them to iteratively
+rewrite subterms in an expression
+-/
+example (x y z : Nat) : (x + 0) * (0 + y * 1 + z * 0) = x * y := by
+        simp
+
+example (x y z : Nat) (p : Nat → Prop) (h : p (x * y))
+        : p ((x + 0) * (0 + y * 1 + z * 0)) := by
+        simp; assumption
+
+open List
+example (xs : List Nat)
+        : reverse (xs ++ [1, 2, 3]) = [3, 2, 1] ++ reverse xs := by
+        simp
+
+example (xs ys : List α)
+        : length (reverse (xs ++ ys)) = length xs + length ys := by
+        simp [Nat.add_comm]
+
+/-
+Like rw, you can use the keyword at simplify a hypothesis
+-/
+example (x y z : Nat) (p : Nat → Prop)
+        (h : p ((x + 0) * (0 + y * 1 + z * 0))) : p (x * y) := by
+        simp at h; assumption
+
+/-
+You can also use a wildcard asterisk to simplify all the hypotheses and the goal
+-/
+section
+attribute [local simp] Nat.mul_comm Nat.mul_assoc Nat.mul_left_comm
+attribute [local simp] Nat.add_assoc Nat.add_comm Nat.add_left_comm
+
+example (w x y z : Nat) (p : Nat → Prop)
+        (h : p (x * y + z * w * x)) : p (x * w * z + y * x) := by
+        simp at *; assumption
+
+example (x y z : Nat) (p : Nat → Prop)
+        (h₁ : p (1 * x + y)) (h₂ : p (x * z * 1))
+        : p (y + 0 + x) ∧ p (z * x) := by
+        simp at * <;> constructor <;> assumption
+
+/-
+It may seem that commutativity and left-commutativity are problematic, in that repeated
+application of either causes looping. But the simplifier detects identities that permute
+their arguments, and uses a technique called ordered rewriting. This means that the system
+maintains an internal ordering of terms, and only applies the identity of doing so
+decreses the order.
+
+In the above example, this has the effect that all the parentheses in an expression are
+associated to the right, and the expressions are ordered in a canonical (though somewhat
+arbitrary) way. Two expressions that are equivalent up to associativity and commutativity
+are then rewritten to the same canoncial form
+-/
+example (w x y z : Nat) (p : Nat → Prop)
+        : x * y + z * w * x = x * w * z + y * x := by
+        simp
+
+example (w x y z : Nat) (p : Nat → Prop)
+        (h : p (x * y + z * w * x)) :  p (x * w * z + y * x) := by
+        simp; simp at h; assumption
+
+end
+
+/-
+As with rw, you can send simp a list of facts to use, including general lemmas, local
+hypotheses, definitions to unfold, and compound expressions.
+The simp tactic also recognizes the ←t syntax that rewrite does. In any case, the
+additional rules are added to the collection of identities that are used to simplify
+a term
+-/
+
+def f1 (m n : Nat) : Nat :=
+    m + n + m
+
+example {m n : Nat} (h : n = 1) (h' : 0 = m) : (f1 m n) = n := by
+        simp [h, ←h', f1]
+
+/- A common idiom is to simplify a goal using local hypotheses -/
+variable (k : Nat) (f : Nat → Nat)
+
+example (h₁ : f 0 = 0) (h₂ : k = 0) : f k = 0 := by
+        simp [h₁, h₂]
+
+/- To use all hypotheses present in the local context,we can use the wild card symbol -/
+example (h₁ : f 0 = 0) (h₂ : k = 0) : f k = 0 := by
+        simp [*]
+
+example (u w x y z : Nat) (h₁ : x = y + z) (h₂ : w = u + x)
+        : w = z + y + u := by
+        simp [*, Nat.add_comm]
+
+/- The simplifier will also do propositional rewriting -/
+example (p q : Prop) (hp : p) : p ∧ q ↔ q := by
+        simp [*]
+
+example (p q : Prop) (hp : p) : p ∨ q := by
+        simp [*]
+
+example (u w x x' y y' z : Nat) (p : Nat → Prop)
+        (h₁ : x + 0 = x') (h₂ : y + 0 = y')
+        : x + y + 0 = x' + y' := by
+        simp at *
+        simp [*]
+
+/-
+The capabilities of the simplifier grows as a library develops
+
+Suppose we prove the following
+-/
+def mk_symm (xs : List α) :=
+    xs ++ xs.reverse
+
+theorem reverse_mk_symm (xs : List α)
+        : (mk_symm xs).reverse = mk_symm xs := by
+        simp [mk_symm]
+
+/- We can now use the theorem to prove new results -/
+example (xs ys : List Nat)
+        : (xs ++ mk_symm ys).reverse = mk_symm ys ++ xs.reverse := by
+        simp [reverse_mk_symm]
+
+example (xs ys : List Nat) (p : List Nat → Prop)
+        (h : p (xs ++ mk_symm ys).reverse)
+        : p (mk_symm ys ++ xs.reverse) := by
+        simp [reverse_mk_symm] at h; assumption
+
+/-
+But using reverse_mk_symm is the right thing to do, and it would be nice if
+users did not need to invoke it explicitly. You can achieve that by marking it as a
+simplification rule when the theorem is defined
+
+@[simp] causes the following theorem to have the [simp] attribute
+-/
+@[simp] theorem reverse_mk_symm2 (xs : List α)
+        : (mk_symm xs).reverse = mk_symm xs := by
+        simp [mk_symm]
+
+example (xs ys : List Nat) (p : List Nat → Prop)
+        (h : p (xs ++ mk_symm ys).reverse)
+        : p (mk_symm ys ++ xs.reverse) := by
+        simp at h; assumption
+
+/-
+It can also be spelled out more explicitly
+And can be applied anytime after the theorem is declared
+-/
+attribute [simp] reverse_mk_symm
+
+/-
+Once the attribute is applied, there is no way to permanently remove it, and persists in
+any file that imports the one where the attribute is assigned. As we will discuss further
+later, one can limit the scope of an attribute to the current file or
+section using the local modifier [local simp]
+-/
+section
+attribute [local simp] reverse_mk_symm
+
+example (xs ys : List Nat)
+        : (xs ++ mk_symm ys).reverse = mk_symm ys ++ xs.reverse := by
+        simp
+
+example (xs ys : List Nat) (p : List Nat → Prop)
+        (h : p (xs ++ mk_symm ys).reverse)
+        : p (mk_symm ys ++ xs.reverse) := by
+        simp at h; assumption
+end
+/-
+Outside the section, the simplifier will no longer use reverse_mk_symm by default.
+The listed order of rules given by the doc string on simp is rigid
+
+Writing simp only excludes the default theorems marked with the attribute [simp] and
+allows you to use a more explicitly crafted list of rules.
+
+the minus sign and only are used to block the application of reverse_mk_symm
+-/
+example (xs ys : List Nat) (p : List Nat → Prop)
+        (h : p (xs ++ mk_symm ys).reverse)
+        : p (mk_symm ys ++ xs.reverse) := by
+  simp at h; assumption
+
+example (xs ys : List Nat) (p : List Nat → Prop)
+        (h : p (xs ++ mk_symm ys).reverse)
+        : p ((mk_symm ys).reverse ++ xs.reverse) := by
+  simp [-reverse_mk_symm] at h; assumption
+
+example (xs ys : List Nat) (p : List Nat → Prop)
+        (h : p (xs ++ mk_symm ys).reverse)
+        : p ((mk_symm ys).reverse ++ xs.reverse) := by
+  simp only [List.reverse_append] at h; assumption
+
+/-
+There are more configuration options for simp. For example, we can enable contextual
+simplifications as follows:
+-/
+example : if x = 0 then y + x = y else x != 0 := by
+        simp +contextual
+
+/-
+With +contextual, the simp tactic uses the fact that x = 0 when simplifying
+y + x = y and x != 0 when simplifying the other branch
+-/
+example : ∀ (x : Nat) (h : x = 0), y + x = y := by
+        simp +contextual
+
+/- Another useful config enables arithmetical simplifications -/
+example : 0 < 1 + x ∧ x + y + 2 ≥ y + 1 := by
+        simp +arith
+
+/- 5.8 Split Tactic -/
+/-
+The split tactic is useful for breaking nested if-then-else and match expressions in cases
+For a match expression with n cases, the split tactic generates at most n subgoals
+-/
+def f2 (x y z : Nat) : Nat :=
+    match x, y, z with
+    | 5, _, _ => y
+    | _, 5, _ => y
+    | _, _, 5 => y
+    | _, _, _ => 1
+
+example (x y z : Nat) : x ≠ 5 → y ≠ 5 → z ≠ 5 → z = w → f2 x y w = 1 := by
+        intros
+        simp [f2]
+        split
+        . contradiction
+        . contradiction
+        . contradiction
+        . rfl
+
+/- We can compress the tactic proof above as follows -/
+example (x y z : Nat) :
+        x ≠ 5 → y ≠ 5 → z ≠ 5 → z = w →
+        f2 x y w = 1 := by
+        intros; simp [f2]; split <;> first | contradiction | rfl
+
+/-
+The tactic split <;> first | contradiction | rfl first applies split tactic,
+and then for each generated goal it tries contradiction, and then rfl if
+contradiction fails. Like simp, we can apply split to a particular hypothesis
+-/
+def g (xs ys : List Nat) : Nat :=
+    match xs, ys with
+    | [a, b], _ => a+b+1
+    | _, [b, _] => b+1
+    | _, _      => 1
+
+example (xs ys : List Nat) (h : g xs ys = 0) : False := by
+        simp [g] at h; split at h <;> simp +arith at h
+
+/- 5.9 Extensible Tacics -/
+/-
+We can define the notation triv using the command syntax
+Then we use the command macro_rules to specify what should be done when triv is used.
+You can provide different expansions, and the tactic interpreter will try all of them
+until one succeeds
+-/
+syntax "triv" : tactic
+
+macro_rules
+    | `(tactic | triv) => `(tactic | assumption)
+
+example (h : p) : p := by
+        triv
+
+/- Now we can extend 'triv' -/
+macro_rules
+    | `(tactic | triv) => `(tactic | rfl)
+
+example (x : α) : x = x := by
+        triv
+
+example (x : α) (h : p) : x = x ∧ p := by
+        apply And.intro <;> triv
+
+/- We may now add a (recursive) extension -/
+macro_rules | `(tactic | triv) => `(tactic | apply And.intro <;> triv)
+
+example (x : α) (h : p) : x = x ∧ p := by
+        triv
+
+/- 5.10 Exercises -/
+/- 5.10.1 Maybe another time -/
+
+/- 5.10.2 -/
+example (p q r : Prop) (hp : p)
+        : (p ∨ q ∨ r) ∧ (q ∨ p ∨ r) ∧ (q ∨ r ∨ p) := by
+        simp [hp]
